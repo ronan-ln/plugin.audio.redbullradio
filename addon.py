@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 from kodiswift import Plugin
 import requests
-import simplejson
-
-INDEX_JSON = None
-
+import json
 
 plugin = Plugin()
 
@@ -21,14 +18,14 @@ def extract(text, startText, endText):
 @plugin.cached(ttl=5)
 def get_json_content(url):
     html = requests.get(url, verify=False).text
-    json_str = extract(html, '<script>window.__INITIAL_STATE__ = ', '</script>')
-    return simplejson.loads(json_str)
+    json_content_str = extract(html, '<script>window.__INITIAL_STATE__ = ', '</script>')
+    return json.loads(json_content_str)
 
-def build_onair_item(json):
-    episode = json['channels']['main']['currentTimeslot']['episode']
-    show_slug = json['channels']['main']['currentTimeslot']['showSlug']
+def build_onair_item(json_content):
+    episode = json_content['channels']['main']['currentTimeslot']['episode']
+    show_slug = json_content['channels']['main']['currentTimeslot']['showSlug']
 
-    episode_details = json['episodes'][show_slug][episode]
+    episode_details = json_content['episodes'][show_slug][episode]
     try:
         episode_image = 'http:' + episode_details['imageURL']['landscape']
     except KeyError:
@@ -43,9 +40,9 @@ def build_onair_item(json):
 
 @plugin.route('/')
 def index():
-    index_json = get_json_content("https://redbullradio.com")
+    index_json_content = get_json_content("https://redbullradio.com")
 
-    items = [build_onair_item(index_json)]
+    items = [build_onair_item(index_json_content)]
 
     for label in ['channels', 'shows', 'on-demand', 'search']:
         item = {
@@ -63,16 +60,16 @@ def index():
 def load_channels(featured=False):
 
     if featured:
-        json = get_json_content("https://redbullradio.com/")
+        json_content = get_json_content("https://redbullradio.com/")
     else:
-        json = get_json_content("https://redbullradio.com/channels")
+        json_content = get_json_content("https://redbullradio.com/channels")
 
     items = []
-    for channel_name in json['indexes']['channel']:
+    for channel_name in json_content['indexes']['channel']:
         if channel_name == 'main':
             continue
 
-        channel_details = json['channels'].get(channel_name)
+        channel_details = json_content['channels'].get(channel_name)
         if not channel_details:
             continue
 
@@ -81,7 +78,7 @@ def load_channels(featured=False):
         channel_stream_url = channel_details['streamURL']
         show_slug = channel_details['showSlug']
 
-        episode_details = json['episodes'][show_slug][current_episode]
+        episode_details = json_content['episodes'][show_slug][current_episode]
         try:
             episode_image = 'http:' + episode_details['imageURL']['landscape']
         except KeyError:
@@ -105,15 +102,15 @@ def load_channels(featured=False):
 def load_channel(channel_name):
     items = []
 
-    json = get_json_content("https://redbullradio.com/")
-    if channel_name not in json['channels']:
-        json = get_json_content("https://redbullradio.com/channels/{}".format(channel_name))
+    json_content = get_json_content("https://redbullradio.com/")
+    if channel_name not in json_content['channels']:
+        json_content = get_json_content("https://redbullradio.com/channels/{}".format(channel_name))
 
-    channel_details = json['channels'][channel_name]
+    channel_details = json_content['channels'][channel_name]
     show_slug = channel_details['showSlug']
 
     current_episode = channel_details['currentEpisode']
-    current_episode_details = json['episodes'][show_slug][current_episode]
+    current_episode_details = json_content['episodes'][show_slug][current_episode]
     current_episode_title = current_episode_details['title']
     current_episode_url = current_episode_details['audioURL']
     try:
@@ -135,11 +132,11 @@ def load_channel(channel_name):
         episode_name = episode['showSlug']
         show_name = episode['slug']
 
-        if episode_name not in json['episodes'] \
-        or show_name not in json['episodes'][episode_name]:
+        if episode_name not in json_content['episodes'] \
+        or show_name not in json_content['episodes'][episode_name]:
             continue
 
-        episode_details = json['episodes'][episode_name][show_name]
+        episode_details = json_content['episodes'][episode_name][show_name]
         show_title = episode_details['showTitle']
         episode_title = episode_details['title']
         episode_url = episode_details['audioURL']
@@ -164,13 +161,13 @@ def load_channel(channel_name):
 
 @plugin.route('/shows/')
 def load_shows():
-    json = get_json_content("https://redbullradio.com/shows")
+    json_content = get_json_content("https://redbullradio.com/shows")
 
     shows = {}
     featured_shows = []
 
-    for show_name in json['indexes']['show']:
-        show_details = json['shows'][show_name]
+    for show_name in json_content['indexes']['show']:
+        show_details = json_content['shows'][show_name]
         show_title = show_details['title']
 
         item = {
@@ -213,11 +210,11 @@ def load_shows():
 
 @plugin.route('/shows/<show_name>')
 def load_show(show_name):
-    json = get_json_content("https://redbullradio.com/shows/{}".format(show_name))
+    json_content = get_json_content("https://redbullradio.com/shows/{}".format(show_name))
 
     items = []
-    for episode_name in json['shows'][show_name]['previousEpisodes']:
-        episode_details = json['episodes'][show_name][episode_name]
+    for episode_name in json_content['shows'][show_name]['previousEpisodes']:
+        episode_details = json_content['episodes'][show_name][episode_name]
         episode_title = episode_details['title']
         episode_url = episode_details['audioURL']
         try:
@@ -239,10 +236,10 @@ def load_show(show_name):
 
 @plugin.route('/shows/<show_name>/episodes/<episode_name>')
 def load_episode(show_name, episode_name):
-    json = get_json_content("https://redbullradio.com/shows/{}/episodes/{}".format(show_name, episode_name))
+    json_content = get_json_content("https://redbullradio.com/shows/{}/episodes/{}".format(show_name, episode_name))
 
     items = []
-    episode_details = json['episodes'][show_name][episode_name]
+    episode_details = json_content['episodes'][show_name][episode_name]
     episode_title = episode_details['title']
     episode_url = episode_details['audioURL']
     try:
@@ -265,7 +262,7 @@ def load_episode(show_name, episode_name):
 @plugin.route('/on-demand/')
 def load_ondemand(featured=False):
 
-    json = get_json_content("https://redbullradio.com/")
+    json_content = get_json_content("https://redbullradio.com/")
     filter =  plugin.request.args.get('filter')
 
     items = []
@@ -278,13 +275,13 @@ def load_ondemand(featured=False):
     else:
         filter = filter[0]
         if filter == 'byGenre':
-            for genre in json['onDemand'][filter].keys():
+            for genre in json_content['onDemand'][filter].keys():
                 item = {'label': genre.replace('-', ' ').title(),
                         'path': ':/on-demand/genres/{}'.format(genre),
                         'is_playable': False}
                 items.append(item)
         else:
-            for episode_details in json['onDemand'][filter]['episodes']:
+            for episode_details in json_content['onDemand'][filter]['episodes']:
                 show_title = episode_details['showTitle']
                 episode_title = episode_details['title']
                 episode_url = episode_details['audioURL']
@@ -308,9 +305,9 @@ def load_ondemand(featured=False):
 @plugin.route('/on-demand/genres/<genre>')
 def load_ondemand_genre(genre):
 
-    json = get_json_content("https://redbullradio.com/on-demand/genres/{}".format(genre))
+    json_content = get_json_content("https://redbullradio.com/on-demand/genres/{}".format(genre))
     items = []
-    for episode_details in json['onDemand']['byGenre'][genre]['episodes']:
+    for episode_details in json_content['onDemand']['byGenre'][genre]['episodes']:
         show_title = episode_details['showTitle']
         episode_title = episode_details['title']
         episode_url = episode_details['audioURL']
@@ -332,12 +329,12 @@ def load_ondemand_genre(genre):
 def search():
 
     query =  (plugin.request.args.get('q') or [plugin.keyboard()])[0]
-    json = get_json_content("https://redbullradio.com/search?q={}".format(query))
+    json_content = get_json_content("https://redbullradio.com/search?q={}".format(query))
 
     category = plugin.request.args.get('category', [None])[0]
     items = []
     if not category:
-        for result_category, results in json['search']['results'].items():
+        for result_category, results in json_content['search']['results'].items():
             if len(results) > 0:
                 item = {
                     'label': '{} ({})'.format(result_category.title(), len(results)),
@@ -346,7 +343,7 @@ def search():
                 }
                 items.append(item)
     else:
-        for result in json['search']['results'][category]:
+        for result in json_content['search']['results'][category]:
             show_title = result.get('showTitle', category.title())
             episode_title = result['title']
             path = result['path']
