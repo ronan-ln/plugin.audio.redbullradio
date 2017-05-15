@@ -2,12 +2,12 @@
 <addon id="plugin.audio.redbullradio" name="RedBullRadio" version="0.0.1" provider-name="Ronan (ronanln)">
   <requires>
     <import addon="xbmc.python" version="2.24.0" />
-    <import addon="script.module.kodiswift" version="0.0.1" />
+    <import addon="script.module.kodiswift" version="0.0.8" />
     <import addon="script.module.requests" version="2.12.4" />
-    <import addon="simplejson" version="3.10.0" />
+    <import addon="script.module.simplejson" version="3.10.0" />
   </requires>
   <extension point="xbmc.python.pluginsource" library="addon.py">
-    <provides>video</provides>
+    <provides>audio</provides>
   </extension>
   <extension point="xbmc.addon.metadata">
     <platform>all</platform>
