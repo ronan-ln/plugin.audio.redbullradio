@@ -5,6 +5,12 @@ import json
 
 plugin = Plugin()
 
+def make_image_url(url, thumbnail=True):
+    url = 'http://' + url
+    if thumbnail:
+        url += '?auto=format&dpr=1&crop=faces&fit=crop&w=170&h=170'
+    return url
+
 def extract(text, startText, endText):
     start = text.find(startText, 0)
     if start != -1:
@@ -14,35 +20,26 @@ def extract(text, startText, endText):
             return text[start:end]
     return None
 
-
-@plugin.cached(ttl=5)
+@plugin.cached(ttl=60)
 def get_json_content(url):
     html = requests.get(url, verify=False).text
     json_content_str = extract(html, '<script>window.__INITIAL_STATE__ = ', '</script>')
     return json.loads(json_content_str)
 
 def build_onair_item(json_content):
-    episode = json_content['channels']['main']['currentTimeslot']['episode']
-    show_slug = json_content['channels']['main']['currentTimeslot']['showSlug']
+    onair_channel = json_content['channels']['main']
+    episode = onair_channel['currentTimeslot']['episode']
+    show_slug = onair_channel['currentTimeslot']['showSlug']
+    details = json_content['episodes'][show_slug][episode]
 
-    episode_details = json_content['episodes'][show_slug][episode]
-    try:
-        episode_image = 'http:' + episode_details['imageURL']['landscape']
-    except KeyError:
-        episode_image = 'http:' + episode_details['imageURL']['portrait']
-    episode_title = episode_details['title']
-    episode_audio = episode_details['audioURL']
-    return {
-        'label': 'On Air',
-        'path': 'http://broadcast.rbmaradio.net/main',
-        'is_playable': True
-    }
+    onair_channel_url = onair_channel['streamURL']
+    return build_item(details, prefix='On Air', force_url=onair_channel_url)
 
 @plugin.route('/')
 def index():
-    index_json_content = get_json_content("https://redbullradio.com")
+    json_content = get_json_content("https://redbullradio.com")
 
-    items = [build_onair_item(index_json_content)]
+    items = [build_onair_item(json_content)]
 
     for label in ['channels', 'shows', 'on-demand', 'search']:
         item = {
@@ -55,6 +52,35 @@ def index():
     items += load_channels(featured=True)
 
     return items
+
+def build_item(details, prefix='', force_url=None, playable=True, label=''):
+
+    title = details['title']
+    url = force_url or details['audioURL']
+    genres = ', '.join(map(unicode.title, [g['title'] for g in details.get('genres', [])]))
+    image_url = details['imageURL'].get('landscape') or details['imageURL'].get('portrait')
+    if not label:
+        if prefix:
+            label = ':'.join([prefix, title])
+        else:
+            label = title
+
+    item = {
+        'label': label,
+        'path': url,
+        'icon': make_image_url(image_url, thumbnail=True),
+        'thumbnail': make_image_url(image_url, thumbnail=True),
+        'poster': make_image_url(image_url, thumbnail=False),
+        'info_type': 'music',
+        'info': {'genre': genres,
+                 'date': '.'.join(details['premiereOn'].split(' ')[0].split('-')[-1:0]) if 'premierOn' in details else None,
+                 'duration': details.get('duration'),
+                 'title': title
+                 },
+        'is_playable': playable}
+
+    return item
+
 
 @plugin.route('/channels/')
 def load_channels(featured=False):
@@ -79,24 +105,22 @@ def load_channels(featured=False):
         show_slug = channel_details['showSlug']
 
         episode_details = json_content['episodes'][show_slug][current_episode]
-        try:
-            episode_image = 'http:' + episode_details['imageURL']['landscape']
-        except KeyError:
-            episode_image = 'http:' + episode_details['imageURL']['portrait']
 
-        genres = ', '.join(map(unicode.title, [g['title'] for g in episode_details.get('genres', [])]))
+        if featured:
+            item = build_item(episode_details,
+                              prefix=channel_title,
+                              force_url=channel_stream_url,
+                              playable=True)
+        else:
+            item = build_item(episode_details,
+                              label=channel_title,
+                              force_url=':/channels/{}'.format(channel_name),
+                              playable=False)
 
-        item = {
-            'label': ('Channel:' if featured else '') + channel_title,
-            'path': channel_stream_url if featured else ':/channels/{}'.format(channel_name),
-            'is_playable': featured,
-            'icon': episode_image,
-            'info_type': 'music',
-            'info': {'genre': genres}
-        }
         items.append(item)
 
     return items
+
 
 @plugin.route('/channels/<channel_name>')
 def load_channel(channel_name):
@@ -109,53 +133,20 @@ def load_channel(channel_name):
     channel_details = json_content['channels'][channel_name]
     show_slug = channel_details['showSlug']
 
-    current_episode = channel_details['currentEpisode']
-    current_episode_details = json_content['episodes'][show_slug][current_episode]
-    current_episode_title = current_episode_details['title']
-    current_episode_url = current_episode_details['audioURL']
-    try:
-        current_episode_image = 'http:' + current_episode_details['imageURL']['landscape']
-    except KeyError:
-        current_episode_image = 'http:' + current_episode_details['imageURL']['portrait']
+    current = channel_details['currentEpisode']
+    current_details = json_content['episodes'][show_slug][current]
 
-    current_episode_genres = ', '.join(map(unicode.title, [g['title'] for g in current_episode_details.get('genres', [])]))
-
-    current_episode_item = {'label': 'Current-'+current_episode_title,
-                            'path': current_episode_url,
-                            'is_playable': True,
-                            'icon': current_episode_image,
-                            'info_type': 'music',
-                            'info': {'genre': current_episode_genres}}
-    items.append(current_episode_item)
+    items.append(build_item(current_details, prefix='OnAir'))
 
     for episode in channel_details['episodes']:
         episode_name = episode['showSlug']
         show_name = episode['slug']
 
-        if episode_name not in json_content['episodes'] \
-        or show_name not in json_content['episodes'][episode_name]:
-            continue
+        show_url = ":/shows/{}/episodes/{}".format(episode_name, show_name)
+        item = build_item(episode, force_url=show_url, playable=False)
 
-        episode_details = json_content['episodes'][episode_name][show_name]
-        show_title = episode_details['showTitle']
-        episode_title = episode_details['title']
-        episode_url = episode_details['audioURL']
-        try:
-            episode_image = 'http:' + current_episode_details['imageURL']['landscape']
-        except KeyError:
-            episode_image = 'http:' + current_episode_details['imageURL']['portrait']
-
-        episode_genres = ', '.join(map(unicode.title, [g['title'] for g in episode_details.get('genres', [])]))
-
-        episode_item = {'label': ':'.join([show_title, episode_title]),
-                        'path': episode_url,
-                        'is_playable': True,
-                        'icon': episode_image,
-                        'info_type': 'music',
-                        'info': {'genre': episode_genres}}
-
-        if episode_item not in items:
-            items.append(episode_item)
+        if item and item not in items:
+            items.append(item)
 
     return items
 
@@ -190,7 +181,7 @@ def load_shows():
     if not selected_category:
         for s in featured_shows:
             s['label'] = 'Featured:' + s['label']
-        items = featured_shows
+        items = []
         for category in shows.keys() + ['all']:
             if category:
                 item = {
@@ -199,6 +190,7 @@ def load_shows():
                     'is_playable': False
                 }
                 items.append(item)
+        items += featured_shows
     elif selected_category == 'all':
         items = featured_shows
         for category_shows in shows.values():
@@ -208,54 +200,19 @@ def load_shows():
         items = shows[selected_category]
     return items
 
-@plugin.route('/shows/<show_name>')
-def load_show(show_name):
+@plugin.route('/shows/<show_name>/episodes/<episode_name>', name='episode_route')
+@plugin.route('/shows/<show_name>', name='show_route')
+def load_episode(show_name, episode_name=None):
     json_content = get_json_content("https://redbullradio.com/shows/{}".format(show_name))
+    if episode_name:
+        episode_names = [episode_name]
+    else:
+        episode_names = json_content['shows'][show_name]['previousEpisodes']
 
     items = []
-    for episode_name in json_content['shows'][show_name]['previousEpisodes']:
+    for episode_name in episode_names:
         episode_details = json_content['episodes'][show_name][episode_name]
-        episode_title = episode_details['title']
-        episode_url = episode_details['audioURL']
-        try:
-            episode_image = 'http:' + current_episode_details['imageURL']['landscape']
-        except KeyError:
-            episode_image = 'http:' + current_episode_details['imageURL']['portrait']
-
-        episode_genres = ', '.join([g['title'] for g in episode_details.get('genres',[])])
-
-        episode_item = {'label': episode_title,
-                        'path': episode_url,
-                        'is_playable': True,
-                        'icon': episode_image,
-                        'info_type': 'music',
-                        'info': {'genre': episode_genres}}
-        items.append(episode_item)
-
-    return items
-
-@plugin.route('/shows/<show_name>/episodes/<episode_name>')
-def load_episode(show_name, episode_name):
-    json_content = get_json_content("https://redbullradio.com/shows/{}/episodes/{}".format(show_name, episode_name))
-
-    items = []
-    episode_details = json_content['episodes'][show_name][episode_name]
-    episode_title = episode_details['title']
-    episode_url = episode_details['audioURL']
-    try:
-        episode_image = 'http:' + current_episode_details['imageURL']['landscape']
-    except KeyError:
-        episode_image = 'http:' + current_episode_details['imageURL']['portrait']
-
-    episode_genres = ', '.join([g['title'] for g in episode_details.get('genres',[])])
-
-    episode_item = {'label': episode_title,
-                    'path': episode_url,
-                    'is_playable': True,
-                    'icon': episode_image,
-                    'info_type': 'music',
-                    'info': {'genre': episode_genres}}
-    items.append(episode_item)
+        items.append(build_item(episode_details))
 
     return items
 
@@ -282,23 +239,7 @@ def load_ondemand(featured=False):
                 items.append(item)
         else:
             for episode_details in json_content['onDemand'][filter]['episodes']:
-                show_title = episode_details['showTitle']
-                episode_title = episode_details['title']
-                episode_url = episode_details['audioURL']
-                episode_genres = ', '.join([g['title'] for g in episode_details.get('genres',[])])
-                episode_image = episode_details['imageURL'].get('landscape')
-                if not episode_image:
-                    episode_image = episode_details['imageURL']['portrait']
-                episode_image = 'http:' + episode_image
-
-                episode_item = {'label': ':'.join([show_title, episode_title]),
-                                'path': episode_url,
-                                'is_playable': True,
-                                'icon': episode_image,
-                                'info_type': 'music',
-                                'info': {'genre': episode_genres}}
-
-                items.append(episode_item)
+                items.append(build_item(episode_details))
 
     return items
 
@@ -308,20 +249,7 @@ def load_ondemand_genre(genre):
     json_content = get_json_content("https://redbullradio.com/on-demand/genres/{}".format(genre))
     items = []
     for episode_details in json_content['onDemand']['byGenre'][genre]['episodes']:
-        show_title = episode_details['showTitle']
-        episode_title = episode_details['title']
-        episode_url = episode_details['audioURL']
-        episode_genres = ', '.join([g['title'] for g in episode_details.get('genres',[])])
-        episode_image = episode_details['imageURL'].get('landscape')
-        if not episode_image:
-            episode_image = episode_details['imageURL']['portrait']
-        episode_image = 'http:' + episode_image
-
-        episode_item = {'label': ':'.join([show_title, episode_title]),
-                        'path': episode_url,
-                        'is_playable': True}
-
-        items.append(episode_item)
+        items.append(build_item(episode_details))
 
     return items
 
@@ -350,8 +278,8 @@ def search():
             image = 'http:' + result['image']
 
             result_item = {'label': ':'.join([show_title, episode_title]),
-                            'path': ':{}'.format(path),
-                            'is_playable': False}
+                           'path': ':{}'.format(path),
+                           'is_playable': False}
             items.append(result_item)
     return items
 
