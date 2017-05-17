@@ -12,7 +12,7 @@ def make_image_url(url, thumbnail=True):
     return url
 
 def make_audio_url(url):
-    if broadcast in url:
+    if 'broadcast' in url:
         return url
     else:
         return url + '?cbr=256'
@@ -26,7 +26,7 @@ def extract(text, startText, endText):
             return text[start:end]
     return None
 
-@plugin.cached(ttl=60)
+@plugin.cached(ttl=5)
 def get_json_content(url):
     html = requests.get(url, verify=False).text
     json_content_str = extract(html, '<script>window.__INITIAL_STATE__ = ', '</script>')
