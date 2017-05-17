@@ -8,7 +8,7 @@ plugin = Plugin()
 def make_image_url(url, thumbnail=True):
     url = 'http://' + url
     if thumbnail:
-        url += '?auto=format&dpr=1&crop=faces&fit=crop&w=170&h=170'
+        url += '?auto=format&dpr=1&crop=faces&fit=crop&w=70&h=70'
     return url
 
 def extract(text, startText, endText):
@@ -35,6 +35,12 @@ def build_onair_item(json_content):
     onair_channel_url = onair_channel['streamURL']
     return build_item(details, prefix='On Air', force_url=onair_channel_url)
 
+menu_map = {'channels': 'load_channels',
+            'channel': 'load_channel',
+            'shows': 'load_shows',
+            'on-demand': 'load_ondemand',
+            'search': 'search'
+}
 @plugin.route('/')
 def index():
     json_content = get_json_content("https://redbullradio.com")
@@ -44,7 +50,7 @@ def index():
     for label in ['channels', 'shows', 'on-demand', 'search']:
         item = {
             'label': label.replace('-', ' ').title(),
-            'path': ':/{}'.format(label),
+            'path': plugin.url_for(menu_map[label]),
             'is_playable': False,
         }
         items.append(item)
@@ -54,7 +60,6 @@ def index():
     return items
 
 def build_item(details, prefix='', force_url=None, playable=True, label=''):
-
     title = details['title']
     url = force_url or details['audioURL']
     genres = ', '.join(map(unicode.title, [g['title'] for g in details.get('genres', [])]))
@@ -75,9 +80,10 @@ def build_item(details, prefix='', force_url=None, playable=True, label=''):
         'info': {'genre': genres,
                  'date': '.'.join(details['premiereOn'].split(' ')[0].split('-')[-1:0]) if 'premierOn' in details else None,
                  'duration': details.get('duration'),
-                 'title': title
+                 'title': title,
+                 'description': details.get('descriptionText')
                  },
-        'is_playable': playable}
+        'is_playable': playable,}
 
     return item
 
@@ -114,7 +120,7 @@ def load_channels(featured=False):
         else:
             item = build_item(episode_details,
                               label=channel_title,
-                              force_url=':/channels/{}'.format(channel_name),
+                              force_url=plugin.url_for(menu_map['channel'], channel_name=channel_name),
                               playable=False)
 
         items.append(item)
@@ -139,10 +145,10 @@ def load_channel(channel_name):
     items.append(build_item(current_details, prefix='OnAir'))
 
     for episode in channel_details['episodes']:
-        episode_name = episode['showSlug']
-        show_name = episode['slug']
+        show_name = episode['showSlug']
+        episode_name = episode['slug']
 
-        show_url = ":/shows/{}/episodes/{}".format(episode_name, show_name)
+        show_url = plugin.url_for('episode_route', episode_name=episode_name, show_name=show_name)
         item = build_item(episode, force_url=show_url, playable=False)
 
         if item and item not in items:
@@ -163,7 +169,7 @@ def load_shows():
 
         item = {
             'label': show_title,
-            'path': ':/shows/{}'.format(show_name),
+            'path': plugin.url_for('show_route', show_name=show_name),
             'is_playable': False
         }
 
@@ -186,7 +192,7 @@ def load_shows():
             if category:
                 item = {
                     'label': category.replace('-', ' ').title(),
-                    'path': ':/shows/?category={}'.format(category),
+                    'path': plugin.url_for(menu_map['shows'], category=category),
                     'is_playable': False
                 }
                 items.append(item)
@@ -211,8 +217,9 @@ def load_episode(show_name, episode_name=None):
 
     items = []
     for episode_name in episode_names:
-        episode_details = json_content['episodes'][show_name][episode_name]
-        items.append(build_item(episode_details))
+        if episode_name in json_content['episodes'][show_name]:
+            episode_details = json_content['episodes'][show_name][episode_name]
+            items.append(build_item(episode_details))
 
     return items
 
@@ -226,7 +233,7 @@ def load_ondemand(featured=False):
     if not filter:
         for label, menu in [('Latest', 'latest'), ('Featured', 'featured'), ('Genres', 'byGenre')]:
             item = {'label': label,
-                    'path': ':/on-demand?filter={}'.format(menu),
+                    'path': plugin.url_for(menu_map['on-demand'], filter=menu),
                     'is_playable': False}
             items.append(item)
     else:
@@ -234,7 +241,7 @@ def load_ondemand(featured=False):
         if filter == 'byGenre':
             for genre in json_content['onDemand'][filter].keys():
                 item = {'label': genre.replace('-', ' ').title(),
-                        'path': ':/on-demand/genres/{}'.format(genre),
+                        'path': plugin.url_for('load_ondemand_genre', genre=genre),
                         'is_playable': False}
                 items.append(item)
         else:
@@ -266,7 +273,7 @@ def search():
             if len(results) > 0:
                 item = {
                     'label': '{} ({})'.format(result_category.title(), len(results)),
-                    'path': ':/search?q={}&category={}'.format(query, result_category),
+                    'path': plugin.url_for(menu_map['search'])+'?q={}&category={}'.format(query, result_category),
                     'is_playable': False
                 }
                 items.append(item)
