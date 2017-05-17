@@ -6,7 +6,7 @@ import json
 plugin = Plugin()
 
 def make_image_url(url, thumbnail=True):
-    url = 'http://' + url
+    url = 'http:' + url
     if thumbnail:
         url += '?auto=format&dpr=1&crop=faces&fit=crop&w=70&h=70'
     return url
@@ -282,10 +282,10 @@ def search():
             show_title = result.get('showTitle', category.title())
             episode_title = result['title']
             path = result['path']
-            image = 'http:' + result['image']
 
             result_item = {'label': ':'.join([show_title, episode_title]),
                            'path': ':{}'.format(path),
+                           'thumbnail': make_image_url(result['image'], thumbnail=True),
                            'is_playable': False}
             items.append(result_item)
     return items
