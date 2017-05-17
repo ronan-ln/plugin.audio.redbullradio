@@ -188,7 +188,7 @@ def load_shows():
         for s in featured_shows:
             s['label'] = 'Featured:' + s['label']
         items = []
-        for category in shows.keys() + ['all']:
+        for category in shows.keys() + ['all', 'featured']:
             if category:
                 item = {
                     'label': category.replace('-', ' ').title(),
@@ -196,11 +196,13 @@ def load_shows():
                     'is_playable': False
                 }
                 items.append(item)
-        items += featured_shows
     elif selected_category == 'all':
         items = featured_shows
         for category_shows in shows.values():
             items += category_shows
+        items = sorted(items)
+    elif selected_category == 'featured':
+        items = featured_shows
         items = sorted(items)
     else:
         items = shows[selected_category]
