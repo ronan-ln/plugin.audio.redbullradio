@@ -11,6 +11,12 @@ def make_image_url(url, thumbnail=True):
         url += '?auto=format&dpr=1&crop=faces&fit=crop&w=70&h=70'
     return url
 
+def make_audio_url(url):
+    if broadcast in url:
+        return url
+    else:
+        return url + '?cbr=256'
+
 def extract(text, startText, endText):
     start = text.find(startText, 0)
     if start != -1:
@@ -32,7 +38,7 @@ def build_onair_item(json_content):
     show_slug = onair_channel['currentTimeslot']['showSlug']
     details = json_content['episodes'][show_slug][episode]
 
-    onair_channel_url = onair_channel['streamURL']
+    onair_channel_url = make_audio_url(onair_channel['streamURL'])
     return build_item(details, prefix='On Air', force_url=onair_channel_url)
 
 menu_map = {'channels': 'load_channels',
@@ -61,7 +67,7 @@ def index():
 
 def build_item(details, prefix='', force_url=None, playable=True, label=''):
     title = details['title']
-    url = force_url or details['audioURL']
+    url = force_url or make_audio_url(details['audioURL'])
     genres = ', '.join(map(unicode.title, [g['title'] for g in details.get('genres', [])]))
     image_url = details['imageURL'].get('landscape') or details['imageURL'].get('portrait')
     if not label:
@@ -107,7 +113,7 @@ def load_channels(featured=False):
 
         channel_title = channel_details['title']
         current_episode = channel_details['currentEpisode']
-        channel_stream_url = channel_details['streamURL']
+        channel_stream_url = make_audio_url(channel_details['streamURL'])
         show_slug = channel_details['showSlug']
 
         episode_details = json_content['episodes'][show_slug][current_episode]
