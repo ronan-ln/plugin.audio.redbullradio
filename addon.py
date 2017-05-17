@@ -292,7 +292,7 @@ def search():
             path = result['path']
 
             result_item = {'label': ':'.join([show_title, episode_title]),
-                           'path': ':{}'.format(path),
+                           'path': plugin.url_for('index')+path[1:],
                            'thumbnail': make_image_url(result['image'], thumbnail=True),
                            'is_playable': False}
             items.append(result_item)
